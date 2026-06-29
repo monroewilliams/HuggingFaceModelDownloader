@@ -303,7 +303,7 @@ LOOP:
 
 			// Choose single/multipart path
 			var dlErr error
-			if it.Size >= thresholdBytes && it.AcceptRanges {
+			if cfg.Concurrency > 1 && it.Size >= thresholdBytes && it.AcceptRanges {
 				dlErr = downloadMultipart(fileCtx, httpc, cfg.Token, job, cfg, itForIO, dst, emit)
 			} else {
 				dlErr = downloadSingle(fileCtx, httpc, cfg.Token, job, cfg, itForIO, dst, emit)
@@ -740,17 +740,21 @@ func downloadMultipart(ctx context.Context, httpc *http.Client, token string, jo
 	// ticker happened to last fire.
 	emit(ProgressEvent{Event: "file_progress", Path: it.RelativePath, Downloaded: it.Size, Total: it.Size})
 
-	// Assemble parts
-	out, err := os.Create(dst + ".part")
-	if err != nil {
+	// Assemble parts: rename part-0 to .part, then append remaining parts.
+	// This avoids an unnecessary copy when n == 1 and saves one copy regardless.
+	if err := os.Rename(tmpParts[0], dst+".part"); err != nil {
 		return err
 	}
 
-	for i := 0; i < n; i++ {
+	for i := 1; i < n; i++ {
 		p := tmpParts[i]
 		in, err := os.Open(p)
 		if err != nil {
-			out.Close()
+			return err
+		}
+		out, err := os.OpenFile(dst+".part", os.O_RDWR|os.O_APPEND, 0o644)
+		if err != nil {
+			in.Close()
 			return err
 		}
 		if _, err := io.Copy(out, in); err != nil {
@@ -759,8 +763,8 @@ func downloadMultipart(ctx context.Context, httpc *http.Client, token string, jo
 			return err
 		}
 		in.Close()
+		out.Close()
 	}
-	out.Close()
 
 	if err := os.Rename(dst+".part", dst); err != nil {
 		return err
