@@ -331,8 +331,22 @@ func (lr *LiveRenderer) render(final bool) {
 		maxRows = 3
 	}
 
-	// Sort active by bytes desc (more movement first)
-	sort.Slice(active, func(i, j int) bool { return active[i].bytes > active[j].bytes })
+	// Sort active by completion fraction descending (most complete first).
+	// Files with similar fractions stay together so the visual order is stable.
+	sort.SliceStable(active, func(i, j int) bool {
+		fracI := float64(0)
+		if active[i].total > 0 {
+			fracI = float64(active[i].bytes) / float64(active[i].total)
+		}
+		fracJ := float64(0)
+		if active[j].total > 0 {
+			fracJ = float64(active[j].bytes) / float64(active[j].total)
+		}
+		if fracI != fracJ {
+			return fracI > fracJ
+		}
+		return active[i].path < active[j].path
+	})
 
 	// Compose rows
 	shown := 0
@@ -344,21 +358,29 @@ func (lr *LiveRenderer) render(final bool) {
 		fmt.Fprintln(os.Stdout, renderFileRow(fs, w, lr))
 	}
 
-	// If space remains, show recently finished or queued small set
-	if shown < maxRows {
+	// If space remains, show recently finished (most recent first)
+	remaining := maxRows - shown
+	if remaining > 0 {
 		var rest []*fileState
 		for _, fs := range lr.files {
 			if fs.status == "done" || fs.status == "skip" || fs.status == "error" {
 				rest = append(rest, fs)
 			}
 		}
-		sort.Slice(rest, func(i, j int) bool { return rest[i].started.After(rest[j].started) })
-		for _, fs := range rest {
-			if shown >= maxRows {
+		// Stable sort by start time descending so most recent are first;
+		// path as tiebreaker when times are equal (otherwise map iteration
+		// order leaks through).
+		sort.SliceStable(rest, func(i, j int) bool {
+			if rest[i].started.Equal(rest[j].started) {
+				return rest[i].path < rest[j].path
+			}
+			return rest[i].started.After(rest[j].started)
+		})
+		for i, fs := range rest {
+			if i >= remaining {
 				break
 			}
 			fmt.Fprintln(os.Stdout, renderFileRow(fs, w, lr))
-			shown++
 		}
 	}
 
