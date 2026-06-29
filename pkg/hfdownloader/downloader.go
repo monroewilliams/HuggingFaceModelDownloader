@@ -295,11 +295,67 @@ LOOP:
 				return
 			}
 
-			emit(ProgressEvent{Event: "file_start", Path: finalRel, Total: it.Size})
+			// Check SourceDir: if the file exists locally with a matching SHA256,
+			// link/copy it into place and skip the network entirely.
+			var sourceUsed bool
+			if cfg.SourceDir != "" {
+				srcPath, found := findSourceFile(cfg.SourceDir, job.Repo, it.RelativePath)
+				if found {
+					shaOK := true
+					if it.SHA256 != "" {
+						shaOK = verifySHA256(srcPath, it.SHA256) == nil
+					}
+					if shaOK {
+						emit(ProgressEvent{Event: "file_start", Path: finalRel, Total: it.Size})
+						if err := linkOrCopy(srcPath, dst); err != nil {
+							select {
+							case errCh <- &DownloadError{Path: finalRel, Err: err}:
+							default:
+							}
+							return
+						}
+						sourceUsed = true
+					}
+				}
+			}
+
+			if !sourceUsed {
+				emit(ProgressEvent{Event: "file_start", Path: finalRel, Total: it.Size})
+			}
 
 			// Create a copy with updated RelativePath for progress display
 			itForIO := it
 			itForIO.RelativePath = finalRel
+
+			if sourceUsed {
+				// Source file is already placed at dst (HFCache mode: temp blob path;
+				// legacy mode: final output path). Skip the network download and
+				// verification — we already verified SHA256 above.
+				if useHFCache {
+					// StoreDownloadedFile will move the temp file to blobs/{sha256},
+					// create symlinks, and clean up the temp file.
+					result, err := repoDir.StoreDownloadedFile(dst, it.RelativePath, plan.Commit, it.SHA256, filterSubdir, cfg.NoFriendlyView)
+					if err != nil {
+						select {
+						case errCh <- fmt.Errorf("store source file %s: %w", finalRel, err):
+						default:
+						}
+						return
+					}
+					if manifestBuilder != nil {
+						manifestMu.Lock()
+						manifestBuilder.AddFile(it.RelativePath, result.SHA256, it.Size, it.LFS)
+						manifestMu.Unlock()
+					}
+					emit(ProgressEvent{Event: "file_done", Path: finalRel, Message: "source"})
+					atomic.AddInt64(&downloadedCount, 1)
+				} else {
+					// Legacy mode: dst is already the final path.
+					atomic.AddInt64(&downloadedCount, 1)
+					emit(ProgressEvent{Event: "file_done", Path: finalRel, Message: "source"})
+				}
+				return
+			}
 
 			// Choose single/multipart path
 			var dlErr error

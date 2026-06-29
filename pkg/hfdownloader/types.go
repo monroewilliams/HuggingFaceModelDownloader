@@ -210,6 +210,21 @@ type Settings struct {
 	// Used internally by the CLI; library users typically don't set this.
 	Command string
 
+	// SourceDir is a directory of previously-downloaded flat files to use as
+	// a local data source. When set, the download plan is still fetched from
+	// HuggingFace for metadata (SHA256, size), but each file's data is looked
+	// up locally before attempting an HTTP download.
+	//
+	// Files are looked up at <SourceDir>/<repo>/<relative-path> (e.g.
+	// --source-dir /path/to/models with repo "owner/repo" and path
+	// "model.safetensors" looks for
+	// /path/to/models/owner/repo/model.safetensors). The local file must
+	// match the plan's expected SHA256. On match, files are hard-linked when
+	// possible (same filesystem); otherwise they are copied. If the file is
+	// missing or its SHA256 doesn't match, that individual file falls through
+	// to normal network download — the rest of the job proceeds as usual.
+	SourceDir string
+
 	// Proxy configures HTTP/HTTPS/SOCKS5 proxy settings for downloads.
 	// If nil or empty, falls back to environment variables (HTTP_PROXY, etc).
 	//

@@ -97,6 +97,7 @@ func newDownloadCmd(ctx context.Context, ro *RootOpts) *cobra.Command {
 	var legacy bool
 	var legacyOutput string
 	var localDir string
+	var sourceDir string
 
 	// Proxy settings
 	var proxyURL string
@@ -116,6 +117,7 @@ func newDownloadCmd(ctx context.Context, ro *RootOpts) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			finalCfg.SourceDir = sourceDir
 
 			// Plan-only mode
 			if dryRun {
@@ -181,6 +183,7 @@ func newDownloadCmd(ctx context.Context, ro *RootOpts) *cobra.Command {
 	cmd.Flags().BoolVar(&legacy, "legacy", false, "Use flat directory structure (v2.x behavior); pair with -o to choose the directory")
 	cmd.Flags().StringVarP(&legacyOutput, "output", "o", "", "Output directory for --legacy mode (default: Models/ or Datasets/)")
 	cmd.Flags().StringVar(&localDir, "local-dir", "", "Download real files (not HF cache symlinks) into this directory, like `huggingface-cli download --local-dir`")
+	cmd.Flags().StringVar(&sourceDir, "source-dir", "", "Directory of previously-downloaded files to use as a data source (layout: <source-dir>/<repo>/<path>)")
 
 	// Proxy flags
 	cmd.Flags().StringVarP(&proxyURL, "proxy", "x", "", "Proxy URL (http://, https://, or socks5://)")
