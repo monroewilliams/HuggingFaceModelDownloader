@@ -10,7 +10,7 @@ import (
 func TestFindSourceFile(t *testing.T) {
 	tmp := t.TempDir()
 
-	// Create a layout like: tmp/owner/repo/file.txt
+	// Layout 1: tmp/owner/repo/file.txt (full repo path)
 	modelDir := filepath.Join(tmp, "owner", "repo")
 	if err := os.MkdirAll(modelDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -19,22 +19,54 @@ func TestFindSourceFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Layout 2: tmp/repo/file2.txt (model name only)
+	modelOnlyDir := filepath.Join(tmp, "repo")
+	if err := os.MkdirAll(modelOnlyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelOnlyDir, "file2.txt"), []byte("model-only"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Layout 3: tmp/file3.txt (flat)
+	if err := os.WriteFile(filepath.Join(tmp, "file3.txt"), []byte("flat"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
-		name      string
-		sourceDir string
-		repo      string
-		path      string
-		wantFound bool
+		name       string
+		sourceDir  string
+		repo       string
+		path       string
+		wantFound  bool
+		wantSuffix string // if wantFound, the result should end with this
 	}{
 		{
-			name:      "found exact path",
+			name:      "found full repo path",
 			sourceDir: tmp,
 			repo:      "owner/repo",
 			path:      "file.txt",
 			wantFound: true,
+			wantSuffix: filepath.Join("owner", "repo", "file.txt"),
 		},
 		{
-			name:      "wrong repo",
+			name:      "fallback to model-only path",
+			sourceDir: tmp,
+			repo:      "owner/repo",
+			path:      "file2.txt",
+			wantFound: true,
+			wantSuffix: filepath.Join("repo", "file2.txt"),
+		},
+		{
+			name:      "fallback to flat path",
+			sourceDir: tmp,
+			repo:      "owner/repo",
+			path:      "file3.txt",
+			wantFound: true,
+			wantSuffix: "file3.txt",
+		},
+		{
+			name:      "wrong repo no fallback",
 			sourceDir: tmp,
 			repo:      "other/repo",
 			path:      "file.txt",
@@ -47,6 +79,14 @@ func TestFindSourceFile(t *testing.T) {
 			path:      "subdir/config.json",
 			wantFound: false,
 		},
+		{
+			name:      "repo with no slash uses flat fallback",
+			sourceDir: tmp,
+			repo:      "flatmodel",
+			path:      "file3.txt",
+			wantFound: true,
+			wantSuffix: "file3.txt",
+		},
 	}
 
 	for _, tt := range tests {
@@ -57,12 +97,11 @@ func TestFindSourceFile(t *testing.T) {
 					tt.sourceDir, tt.repo, tt.path, found, tt.wantFound)
 			}
 			if found {
-				wantSuffix := filepath.Join(tt.repo, tt.path)
 				if !filepath.IsAbs(got) {
 					t.Errorf("findSourceFile returned non-absolute path: %s", got)
 				}
-				if !strings.HasSuffix(got, wantSuffix) {
-					t.Errorf("findSourceFile path ends with %q, got: %s", wantSuffix, got)
+				if tt.wantSuffix != "" && !strings.HasSuffix(got, tt.wantSuffix) {
+					t.Errorf("findSourceFile path should end with %q, got: %s", tt.wantSuffix, got)
 				}
 			}
 		})

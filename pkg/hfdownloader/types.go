@@ -215,14 +215,14 @@ type Settings struct {
 	// HuggingFace for metadata (SHA256, size), but each file's data is looked
 	// up locally before attempting an HTTP download.
 	//
-	// Files are looked up at <SourceDir>/<repo>/<relative-path> (e.g.
-	// --source-dir /path/to/models with repo "owner/repo" and path
-	// "model.safetensors" looks for
-	// /path/to/models/owner/repo/model.safetensors). The local file must
-	// match the plan's expected SHA256. On match, files are hard-linked when
-	// possible (same filesystem); otherwise they are copied. If the file is
-	// missing or its SHA256 doesn't match, that individual file falls through
-	// to normal network download — the rest of the job proceeds as usual.
+	// Files are looked up in order at:
+	//   1. <SourceDir>/<repo>/<relative-path> (e.g. /models/owner/model/file.bin)
+	//   2. <SourceDir>/<model>/<relative-path> (e.g. /models/model/file.bin)
+	//   3. <SourceDir>/<relative-path> (e.g. /models/file.bin)
+	// The local file must match the plan's expected SHA256. On match, files are
+	// hard-linked when possible (same filesystem); otherwise they are copied. If
+	// the file is missing or its SHA256 doesn't match, that individual file falls
+	// through to normal network download — the rest of the job proceeds as usual.
 	SourceDir string
 
 	// Proxy configures HTTP/HTTPS/SOCKS5 proxy settings for downloads.
